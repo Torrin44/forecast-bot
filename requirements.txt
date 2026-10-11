@@ -1,0 +1,4 @@
+numpy==2.4.6
+requests==2.34.2
+python-dotenv==1.2.4
+asknews==0.14.6

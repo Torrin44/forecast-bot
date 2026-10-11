@@ -1,0 +1,65 @@
+name: Forecast
+
+# Questions are only open for ~1.5 hours, so missed runs = missed points.
+# GitHub's own cron is unreliable under load (one bot maker saw only 22% of
+# scheduled runs fire in Sep 2026), so an external scheduler (cron-job.org,
+# see docs/SETUP.md) also triggers this workflow via `workflow_dispatch`.
+# Runs that find no new questions finish in under a minute and cost nothing.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [all, tournament, minibench, test, status]
+        default: all
+      dry_run:
+        description: "Forecast but post nothing"
+        type: boolean
+        default: false
+      force:
+        description: "Re-forecast already-forecast questions (test mode only)"
+        type: boolean
+        default: false
+  schedule:
+    - cron: "4,19,34,49 * * * *"
+
+concurrency:
+  group: forecast
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  forecast:
+    # Master switch: Settings > Secrets and variables > Actions > Variables > BOT_ENABLED = true.
+    # Until it is set (e.g. while secrets are still missing) every run is skipped quietly.
+    if: ${{ vars.BOT_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Run bot
+        env:
+          METACULUS_TOKEN: ${{ secrets.METACULUS_TOKEN }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          ASKNEWS_API_KEY: ${{ secrets.ASKNEWS_API_KEY }}
+          ASKNEWS_CLIENT_ID: ${{ secrets.ASKNEWS_CLIENT_ID }}
+          ASKNEWS_SECRET: ${{ secrets.ASKNEWS_SECRET }}
+          MODE: ${{ inputs.mode || 'all' }}
+          DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
+          FORCE: ${{ inputs.force && '--force' || '' }}
+        run: python main.py --mode "$MODE" $DRY_RUN $FORCE
+      - name: Keep forecast logs (research, member forecasts, costs) for later review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ github.run_id }}
+          path: logs/
+          if-no-files-found: ignore
+          retention-days: 90
